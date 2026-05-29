@@ -8,12 +8,12 @@ import joblib
 import numpy as np
 import os
 
-# Create the database tables if they don't exist yet
+# Create the database tables
 models.Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Industrial AI Monitor API")
+app = FastAPI(title="INGRES AI Industrial Monitor") # Using your preferred project naming style
 
-# Allow your React frontend to talk to this API
+# CORS for React
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], 
@@ -22,47 +22,50 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- LOAD THE ML MODEL ON STARTUP ---
-# We load it here so it only loads once when the server boots up, not on every request.
-model_path = os.path.join(os.path.dirname(__file__), '../models/rul_rf_model.pkl')
+# --- LOAD MODELS ON STARTUP ---
+base_dir = os.path.dirname(__file__)
+
+# 1. RUL Model
 try:
-    rul_model = joblib.load(model_path)
-    print("✅ RUL Model loaded successfully into memory.")
-except Exception as e:
+    rul_model = joblib.load(os.path.join(base_dir, '../models/rul_rf_model.pkl'))
+    print("✅ RUL Model loaded.")
+except:
     rul_model = None
-    print("⚠️ Warning: RUL Model not found. Train it first!")
+
+# 2. Anomaly Model & Scaler
+try:
+    anomaly_model = joblib.load(os.path.join(base_dir, '../models/anomaly_model.pkl'))
+    energy_scaler = joblib.load(os.path.join(base_dir, '../models/energy_scaler.pkl'))
+    print("✅ Anomaly Model & Scaler loaded.")
+except:
+    anomaly_model, energy_scaler = None, None
+
 
 # --- PYDANTIC SCHEMAS ---
-class SensorDataInput(BaseModel):
-    machine_id: str
-    temperature: float
-    vibration: float
-
 class EngineDataInput(BaseModel):
     machine_id: str
-    # The model expects exactly 24 numbers (3 settings + 21 sensors)
     features: list[float] 
+
+class EnergyDataInput(BaseModel):
+    machine_id: str
+    features: list[float] # Must match the number of features used in training
+
 
 # --- API ENDPOINTS ---
 @app.get("/")
 def health_check():
-    return {"status": "System Online", "message": "API is running."}
+    return {"status": "System Online"}
 
 @app.post("/predict-rul")
 def predict_rul(data: EngineDataInput, db: Session = Depends(get_db)):
     if rul_model is None:
-        return {"error": "Machine learning model is offline."}
+        return {"error": "RUL model offline."}
 
-    # scikit-learn expects a 2D array for predictions, so we reshape the list
     input_data = np.array(data.features).reshape(1, -1)
-    
-    # The model returns an array of predictions, we just want the first (and only) one
     predicted_rul = rul_model.predict(input_data)[0]
     
-    # Business Logic: If the engine has less than 30 cycles left, flag it as critical
     status = "Critical Warning" if predicted_rul < 30 else "Healthy"
     
-    # Save this event to our SQLite database for auditing
     new_log = models.AnomalyLog(
         machine_id=data.machine_id,
         sensor_reading=float(predicted_rul), 
@@ -72,8 +75,39 @@ def predict_rul(data: EngineDataInput, db: Session = Depends(get_db)):
     db.add(new_log)
     db.commit()
     
+    return {"machine_id": data.machine_id, "estimated_rul": int(predicted_rul), "status": status}
+
+
+@app.post("/detect-anomaly")
+def detect_anomaly(data: EnergyDataInput, db: Session = Depends(get_db)):
+    if anomaly_model is None or energy_scaler is None:
+        return {"error": "Anomaly model or scaler offline."}
+
+    # 1. Reshape the incoming data
+    input_data = np.array(data.features).reshape(1, -1)
+    
+    # 2. SCALE the data using the exact same scaler from training!
+    scaled_data = energy_scaler.transform(input_data)
+    
+    # 3. Predict (returns 1 for normal, -1 for anomaly)
+    prediction = anomaly_model.predict(scaled_data)[0]
+    
+    is_anomaly = True if prediction == -1 else False
+    status = "Anomaly Detected" if is_anomaly else "Normal"
+    
+    # 4. Log to database if it's an anomaly
+    if is_anomaly:
+        new_log = models.AnomalyLog(
+            machine_id=data.machine_id,
+            sensor_reading=data.features[0], # Just logging the first feature (e.g., power) for reference
+            severity="High",
+            ai_summary="Multivariate sensor mismatch detected. Investigating required." # Placeholder for our future LLM agent
+        )
+        db.add(new_log)
+        db.commit()
+    
     return {
         "machine_id": data.machine_id,
-        "estimated_rul_cycles": int(predicted_rul),
+        "anomaly_detected": is_anomaly,
         "status": status
     }
