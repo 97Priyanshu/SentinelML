@@ -12,6 +12,9 @@ function App() {
   const [saveText, setSaveText] = useState('Save Key')
   const [groqKey, setGroqKey] = useState(localStorage.getItem('sentinel_groq_key') || '')
 
+  const [forecastData, setForecastData] = useState(null)
+  const [isForecastLoading, setIsForecastLoading] = useState(false)
+
   useEffect(() => {
     fetch('http://localhost:8000/')
       .then(res => res.json())
@@ -41,6 +44,24 @@ function App() {
       console.error(err)
     } finally {
       setIsRulLoading(false)
+    }
+  }
+
+  const handleEnergyForecast = async () => {
+    setIsForecastLoading(true)
+    const mockEnergySensors = Array.from({ length: 25 }, () => Math.random() * 50)
+    try {
+      const res = await fetch('http://localhost:8000/forecast-energy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ machine_id: "FACILITY_GRID_01", features: mockEnergySensors, groq_key: groqKey })
+      })
+      const data = await res.json()
+      setForecastData(data)
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setIsForecastLoading(false)
     }
   }
 
@@ -145,7 +166,7 @@ function App() {
             <p style={{ color: '#6B7280', marginTop: '4px' }}>Monitor facility grid health and predict engine RUL cycles.</p>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '24px' }}>
             
             {/* Card 1: Predictive Maintenance */}
             <div style={{ border: '1px solid #E5E7EB', borderRadius: '8px', padding: '24px', backgroundColor: '#FFFFFF', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
@@ -196,6 +217,33 @@ function App() {
                   {anomalyData.ai_summary && (
                     <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #E5E7EB', fontSize: '13px', color: '#374151' }}>
                       <strong>AI Agent Diagnosis:</strong> <br/> {anomalyData.ai_summary}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Card 3: Energy Forecasting */}
+            <div style={{ border: '1px solid #E5E7EB', borderRadius: '8px', padding: '24px', backgroundColor: '#FFFFFF', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+              <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#111827', marginTop: 0 }}>Demand Forecasting</h3>
+              <p style={{ fontSize: '14px', color: '#6B7280', lineHeight: '1.5', marginBottom: '24px' }}>
+                Utilize LightGBM gradient boosting to predict short-term aggregate facility energy consumption.
+              </p>
+              
+              <button onClick={handleEnergyForecast} disabled={isForecastLoading || !groqKey}
+                style={{ backgroundColor: '#3B82F6', color: '#FFFFFF', border: 'none', borderRadius: '6px', padding: '10px 16px', fontWeight: '500', cursor: (!groqKey || isForecastLoading) ? 'not-allowed' : 'pointer', opacity: (!groqKey || isForecastLoading) ? 0.7 : 1 }}>
+                {isForecastLoading ? 'Calculating Load...' : 'Generate Forecast'}
+              </button>
+
+              {!groqKey && <p style={{ fontSize: '12px', color: '#EF4444', marginTop: '8px' }}>Please configure Groq API Key above.</p>}
+
+              {forecastData && (
+                <div style={{ marginTop: '24px', padding: '16px', backgroundColor: '#F9FAFB', borderRadius: '6px', border: '1px solid #E5E7EB', borderLeft: '4px solid #3B82F6' }}>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '14px' }}><strong>Target:</strong> {forecastData.machine_id}</p>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '14px' }}><strong>Predicted Load:</strong> {forecastData.forecasted_wh} Wh</p>
+                  {forecastData.ai_summary && (
+                    <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #E5E7EB', fontSize: '13px', color: '#374151' }}>
+                      <strong>AI Agent Strategy:</strong> <br/> {forecastData.ai_summary}
                     </div>
                   )}
                 </div>
