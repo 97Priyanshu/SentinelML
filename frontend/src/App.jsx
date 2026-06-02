@@ -16,11 +16,13 @@ function App() {
   const [isForecastLoading, setIsForecastLoading] = useState(false)
 
   useEffect(() => {
-    fetch('http://localhost:8000/')
+    fetch('https://sentinelml.onrender.com/')
       .then(res => res.json())
       .then(() => setApiStatus('Connected'))
       .catch(() => setApiStatus('Offline'))
   }, [])
+
+
 
   const handleKeySave = () => {
     localStorage.setItem('sentinel_groq_key', groqKey);
@@ -33,7 +35,7 @@ function App() {
     setIsRulLoading(true)
     const mockSensors = Array.from({ length: 24 }, () => Math.random() * 100)
     try {
-      const res = await fetch('http://localhost:8000/predict-rul', {
+      const res = await fetch('https://sentinelml.onrender.com/predict-rul', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ machine_id: "TURBOFAN_ENG_08", features: mockSensors, groq_key: groqKey })
@@ -51,7 +53,7 @@ function App() {
     setIsForecastLoading(true)
     const mockEnergySensors = Array.from({ length: 25 }, () => Math.random() * 50)
     try {
-      const res = await fetch('http://localhost:8000/forecast-energy', {
+      const res = await fetch('https://sentinelml.onrender.com/forecast-energy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ machine_id: "FACILITY_GRID_01", features: mockEnergySensors, groq_key: groqKey })
@@ -69,7 +71,7 @@ function App() {
     setIsAnomalyLoading(true)
     const mockEnergySensors = Array.from({ length: 26 }, () => Math.random() * 50)
     try {
-      const res = await fetch('http://localhost:8000/detect-anomaly', {
+      const res = await fetch('https://sentinelml.onrender.com/detect-anomaly', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ machine_id: "FACILITY_GRID_01", features: mockEnergySensors, groq_key: groqKey })
